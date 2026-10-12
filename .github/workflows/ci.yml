@@ -1,29 +1,47 @@
+# Назва пайплайну, яка показується у вкладці Actions на GitHub
 name: Battle Engine CI
 
+# Блок тригерів: визначає, за яких подій у репозиторії запускати автоматизацію
 on:
   push:
+    # Спрацьовувати при кожному пуші коду в головну гілку main
     branches: [ main ]
 
-# Надаємо пайплайну права на запис пакетів у реєстр GitHub
+# Права доступу (Permissions): за замовчуванням GitHub дає пайплайну доступ лише на читання.
+# Щоб опублікувати Docker-образ у сховище пакетів, потрібен явний дозвіл на запис (packages: write).
 permissions:
-  contents: read
-  packages: write
+  contents: read      # Дозвіл читати вихідний код репозиторію
+  packages: write     # Дозвіл пушити контейнери в GitHub Container Registry (ghcr.io)
 
+# Набір незалежних завдань (jobs), які виконуються на віртуальних серверах
 jobs:
   test-and-build:
+    # Операційна система хмарної віртуалки, яку безкоштовно виділяє GitHub
     runs-on: ubuntu-latest
 
+    # Покроковий список інструкцій, що виконуються по черзі всередині віртуалки
     steps:
+      # КРОК 1: Клонуємо наш репозиторій на виділену віртуальну машину
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # КРОК 2: Збираємо тимчасовий Docker-образ для запуску тестів
+      # -t tactical-engine-test: даємо образу локальне ім'я для тестів
+      # . (крапка): шукати Dockerfile у поточній кореневій папці
       - name: Build Docker image for testing
         run: docker build -t tactical-engine-test .
 
+      # КРОК 3: Запускаємо тести всередині контейнера
+      # --rm: автоматично видалити цей тестовий контейнер одразу після зупинки, щоб не забивати диск
+      # pytest test_main.py: проганяє наші бойові формули й тести
+      # Якщо хоч один тест впаде (код != 0), весь пайплайн тут зупиниться і не пропустить реліз
       - name: Run pytest inside container
         run: docker run --rm tactical-engine-test pytest test_main.py
 
-      # Крок авторизації в реєстрі пакетів GitHub
+      # КРОК 4: Авторизуємося в реєстрі контейнерів GitHub Container Registry (ghcr.io)
+      # docker/login-action@v3: готовий офіційний модуль від команди Docker
+      # ${{ github.actor }}: змінна, яка сама підставляє твій нікнейм на GitHub (GromoInvis)
+      # ${{ secrets.GITHUB_TOKEN }}: тимчасовий захищений пароль, що створюється GitHub на час запуску
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -31,7 +49,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Збірка фінального образу з тегом реєстру та пуш
+      # КРОК 5: Фінальна збірка та публікація артефакту в реєстр пакетів
+      # Структура тегу: ghcr.io/ім'я_користувача/назва_пакета:тег_версії
+      # Важливо: ім'я користувача (gromoinvis) у тезі пишеться строго маленькими літерами!
       - name: Build and Push Docker Image
         run: |
           docker build -t ghcr.io/gromoinvis/tactical-battle-engine:latest .
