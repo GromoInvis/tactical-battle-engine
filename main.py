@@ -15,7 +15,7 @@ def health_check():
 
 @app.post("/battle/attack")
 def calculate_attack(action: AttackRequest):
-    damage = max(1, action.attack_power - action.target_armor)
+    damage = action.attack_power + action.target_armor
     remaining_hp = max(0, action.target_hp - damage)
     is_alive = remaining_hp > 0
 
