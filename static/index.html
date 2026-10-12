@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <title>Tactical Engine — Disciples II Arena</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; }
+    body { background: #0b0d10; color: #d6d9dc; display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 25px; }
+    h1 { color: #d4af37; margin-bottom: 8px; text-shadow: 0 0 12px rgba(212, 175, 55, 0.4); letter-spacing: 1px; }
+    .subtitle { color: #8b949e; font-size: 14px; margin-bottom: 20px; }
+
+    .battlefield { display: flex; justify-content: space-between; align-items: center; width: 940px; background: #161b22; border: 2px solid #30363d; border-radius: 10px; padding: 30px; box-shadow: 0 12px 35px rgba(0,0,0,0.8); }
+    
+    /* 2 колонки по 3 ряди */
+    .squad { display: grid; grid-template-columns: repeat(2, 140px); grid-template-rows: repeat(3, 115px); gap: 16px; }
+    
+    .unit-card { 
+      background: #21262d; border: 2px solid #30363d; border-radius: 8px; padding: 10px; 
+      display: flex; flex-direction: column; justify-content: space-between; 
+      transition: all 0.2s ease-in-out; position: relative; cursor: default;
+    }
+    
+    /* Стан активного юніта, що зараз ходить */
+    .unit-card.current-turn { 
+      border-color: #f1e05a !important; 
+      box-shadow: 0 0 16px rgba(241, 224, 90, 0.7); 
+      transform: scale(1.04);
+    }
+
+    /* Доступна ціль для атаки */
+    .unit-card.targetable { 
+      cursor: pointer; 
+      border-color: #f85149; 
+    }
+    .unit-card.targetable:hover { 
+      box-shadow: 0 0 14px rgba(248, 81, 73, 0.8); 
+      transform: scale(1.06); 
+    }
+
+    /* Доступна ціль для хілу */
+    .unit-card.healable { 
+      cursor: pointer; 
+      border-color: #2ea043; 
+    }
+    .unit-card.healable:hover { 
+      box-shadow: 0 0 14px rgba(46, 160, 67, 0.8); 
+      transform: scale(1.06); 
+    }
+
+    .unit-card.dead { 
+      opacity: 0.25; filter: grayscale(1); 
+      border-color: #21262d !important; cursor: not-allowed !important; transform: none !important; box-shadow: none !important;
+    }
+    
+    .unit-top { display: flex; justify-content: space-between; align-items: flex-start; }
+    .unit-name { font-weight: bold; font-size: 13px; color: #f0f6fc; }
+    .unit-badge { font-size: 10px; padding: 2px 5px; border-radius: 4px; background: #30363d; color: #8b949e; }
+    .unit-stats { font-size: 11px; color: #8b949e; margin-top: 2px; }
+    
+    .hp-bar-bg { width: 100%; height: 7px; background: #161b22; border-radius: 4px; overflow: hidden; margin-top: 6px; }
+    .hp-bar-fill { height: 100%; background: #238636; width: 100%; transition: width 0.3s; }
+    .hp-text { font-size: 11px; text-align: right; color: #8b949e; margin-top: 3px; }
+
+    .vs-divider { font-size: 26px; font-weight: 900; color: #484f58; letter-spacing: 2px; }
+
+    .turn-status { margin-top: 15px; font-size: 15px; font-weight: bold; color: #58a6ff; }
+
+    .log-box { 
+      width: 940px; height: 160px; background: #161b22; border: 2px solid #30363d; 
+      border-radius: 8px; margin-top: 15px; padding: 12px 15px; overflow-y: auto; 
+      font-family: Consolas, monospace; font-size: 13px; line-height: 1.5; 
+    }
+    .log-entry { margin-bottom: 4px; }
+    .log-player { color: #58a6ff; }
+    .log-enemy { color: #f85149; }
+    .log-heal { color: #3fb950; }
+    .log-crit { color: #d29922; font-weight: bold; }
+    .log-info { color: #8b949e; }
+
+    .controls { margin-top: 12px; display: flex; gap: 10px; }
+    button { background: #30363d; color: #c9d1d9; border: 1px solid #484f58; padding: 8px 18px; font-size: 13px; font-weight: bold; border-radius: 6px; cursor: pointer; transition: 0.2s; }
+    button:hover { background: #3c444d; color: #fff; }
+  </style>
+</head>
+<body>
+
+  <h1>⚔️ Тактична Арена Disciples II</h1>
+  <div class="subtitle">Черга ходів за ініціативою. Оберіть ціль кліком мишки!</div>
+
+  <div class="battlefield">
+    <!-- Загін Імперії (Гравця): [Колонка 0: Тил] [Колонка 1: Авангард] -->
+    <div class="squad" id="player-squad"></div>
+
+    <div class="vs-divider">VS</div>
+
+    <!-- Загін Нежиті (Ворога): [Колонка 0: Авангард] [Колонка 1: Тил] -->
+    <div class="squad" id="enemy-squad"></div>
+  </div>
+
+  <div class="turn-status" id="turn-indicator">Очікування початку бою...</div>
+
+  <div class="controls">
+    <button onclick="resetBattle()">🔄 Перезапустити бій</button>
+  </div>
+
+  <div class="log-box" id="combat-log">
+    <div class="log-entry log-info">[Система] Поле бою готове. Клікніть по підсвіченому ворогу для атаки!</div>
+  </div>
+
+  <script>
+    // Початкові загони за каноном Disciples II
+    const initialUnits = [
+      // ГРАВЕЦЬ (team: 'player')
+      // Тил (col: 0)
+      { id: "p1", name: "Архімаг", role: "Маг", hp: 75, maxHp: 75, atk: 45, arm: 0, init: 40, col: 0, row: 0, team: "player" },
+      { id: "p2", name: "Рейнджер", role: "Лучник", hp: 90, maxHp: 90, atk: 35, arm: 5, init: 60, col: 0, row: 1, team: "player" },
+      { id: "p3", name: "Цілитель", role: "Сапорт", hp: 60, maxHp: 60, atk: 0, heal: 30, arm: 0, init: 20, col: 0, row: 2, team: "player" },
+      // Авангард (col: 1)
+      { id: "p4", name: "Паладин", role: "Танк", hp: 160, maxHp: 160, atk: 30, arm: 25, init: 50, col: 1, row: 0, team: "player" },
+      { id: "p5", name: "Лицар", role: "Воїн", hp: 130, maxHp: 130, atk: 40, arm: 15, init: 50, col: 1, row: 1, team: "player" },
+      { id: "p6", name: "Сквайр", role: "Воїн", hp: 110, maxHp: 110, atk: 25, arm: 10, init: 45, col: 1, row: 2, team: "player" },
+
+      // ВОРОГ (team: 'enemy')
+      // Авангард (col: 0)
+      { id: "e1", name: "Скелет-воїн", role: "Воїн", hp: 110, maxHp: 110, atk: 30, arm: 10, init: 45, col: 0, row: 0, team: "enemy" },
+      { id: "e2", name: "Зомбі", role: "Танк", hp: 170, maxHp: 170, atk: 25, arm: 20, init: 35, col: 0, row: 1, team: "enemy" },
+      { id: "e3", name: "Упир", role: "Воїн", hp: 100, maxHp: 100, atk: 35, arm: 5, init: 55, col: 0, row: 2, team: "enemy" },
+      // Тил (col: 1)
+      { id: "e4", name: "Некромант", role: "Маг", hp: 80, maxHp: 80, atk: 40, arm: 0, init: 40, col: 1, row: 0, team: "enemy" },
+      { id: "e5", name: "Скелет-лучник", role: "Лучник", hp: 85, maxHp: 85, atk: 30, arm: 5, init: 60, col: 1, row: 1, team: "enemy" },
+      { id: "e6", name: "Привид", role: "Маг", hp: 70, maxHp: 70, atk: 35, arm: 0, init: 65, col: 1, row: 2, team: "enemy" }
+    ];
+
+    let units = [];
+    let turnQueue = [];
+    let currentUnit = null;
+    let isProcessing = false;
+
+    function resetBattle() {
+      units = JSON.parse(JSON.stringify(initialUnits));
+      document.getElementById('combat-log').innerHTML = '<div class="log-entry log-info">[Система] Бій перезапущено.</div>';
+      isProcessing = false;
+      buildTurnQueue();
+      nextTurn();
+    }
+
+    // Черга ходу формується за показником ініціативи (Init)
+    function buildTurnQueue() {
+      turnQueue = units
+        .filter(u => u.hp > 0)
+        .sort((a, b) => b.init - a.init);
+    }
+
+    function checkBattleEnd() {
+      const livingPlayers = units.filter(u => u.team === 'player' && u.hp > 0);
+      const livingEnemies = units.filter(u => u.team === 'enemy' && u.hp > 0);
+
+      if (livingPlayers.length === 0) {
+        log("☠️ Поразка! Усіх ваших бійців знищено.", "log-enemy");
+        document.getElementById('turn-indicator').innerText = "Бій завершено: Поразка";
+        return true;
+      }
+      if (livingEnemies.length === 0) {
+        log("👑 Перемога! Орда нежиті розбита!", "log-crit");
+        document.getElementById('turn-indicator').innerText = "Бій завершено: Перемога!";
+        return true;
+      }
+      return false;
+    }
+
+    function nextTurn() {
+      if (checkBattleEnd()) return;
+
+      // Якщо черга закінчилася — починається новий раунд
+      if (turnQueue.length === 0) {
+        log("--- Початок нового раунду ---", "log-info");
+        buildTurnQueue();
+      }
+
+      currentUnit = turnQueue.shift();
+
+      // Пропускаємо вже вбитих
+      if (!currentUnit || currentUnit.hp <= 0) {
+        return nextTurn();
+      }
+
+      const ind = document.getElementById('turn-indicator');
+      if (currentUnit.team === 'player') {
+        ind.innerText = `Ваш хід: [${currentUnit.name}] (${currentUnit.role})`;
+        render();
+      } else {
+        ind.innerText = `Хід ворога: [${currentUnit.name}]...`;
+        render();
+        // Штучний інтелект ворога ходить автоматично з невеликою затримкою для читабельності
+        setTimeout(executeEnemyTurn, 700);
+      }
+    }
+
+    // Перевірка правил Disciples: чи можна атакувати юніта
+    function canTarget(attacker, target) {
+      if (target.hp <= 0) return false;
+
+      // Цілитель хилить союзників
+      if (attacker.role === "Сапорт") {
+        return target.team === attacker.team && target.hp < target.maxHp;
+      }
+
+      // Інші атакують лише ворогів
+      if (target.team === attacker.team) return false;
+
+      // Маги і лучники б'ють будь-яку клітинку
+      if (attacker.role === "Маг" || attacker.role === "Лучник") return true;
+
+      // Бійці ближнього бою (Воїн, Танк):
+      // Якщо в авангарді ворога ще є живі, бити задній ряд не можна!
+      const enemyFrontline = units.filter(u => u.team === target.team && u.col === 0 && u.hp > 0);
+      if (target.col === 1 && enemyFrontline.length > 0) {
+        return false;
+      }
+
+      return true;
+    }
+
+    // Дія гравця при кліку на картку
+    async function onUnitClick(targetId) {
+      if (isProcessing || !currentUnit || currentUnit.team !== 'player') return;
+
+      const target = units.find(u => u.id === targetId);
+      if (!target || !canTarget(currentUnit, target)) return;
+
+      isProcessing = true;
+
+      // Якщо діє Цілитель
+      if (currentUnit.role === "Сапорт") {
+        target.hp = Math.min(target.maxHp, target.hp + currentUnit.heal);
+        log(`✨ [${currentUnit.name}] зцілює [${target.name}] на +${currentUnit.heal} HP!`, "log-heal");
+        isProcessing = false;
+        render();
+        return nextTurn();
+      }
+
+      // Атака через наш бекенд FastAPI
+      try {
+        const res = await fetch('/battle/attack', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            attacker_id: currentUnit.id,
+            target_id: target.id,
+            attack_power: currentUnit.atk,
+            target_armor: target.arm
+          })
+        });
+
+        const data = await res.json();
+        const dmg = typeof data.damage_dealt === 'number' ? data.damage_dealt : 0;
+        target.hp = Math.max(0, target.hp - dmg);
+
+        const critText = data.is_critical ? " 💥 КРИТИЧНИЙ УДАР!" : "";
+        log(`🗡️ [${currentUnit.name}] б'є [${target.name}] на ${dmg} шкоди!${critText}`, data.is_critical ? 'log-crit' : 'log-player');
+
+        if (target.hp === 0) {
+          log(`💀 [${target.name}] загинув!`, 'log-enemy');
+        }
+      } catch (err) {
+        log(`[Помилка API]: ${err.message}`, 'log-enemy');
+      }
+
+      isProcessing = false;
+      render();
+      nextTurn();
+    }
+
+    // Хід комп'ютера (Enemy AI)
+    async function executeEnemyTurn() {
+      if (currentUnit.hp <= 0) return nextTurn();
+
+      // Шукаємо доступні цілі серед гравців
+      const possibleTargets = units.filter(u => u.team === 'player' && canTarget(currentUnit, u));
+
+      if (possibleTargets.length === 0) return nextTurn();
+
+      // Ворог обирає ціль (пріоритет слабшим за HP або рандом)
+      const target = possibleTargets[Math.floor(Math.random() * possibleTargets.length)];
+
+      try {
+        const res = await fetch('/battle/attack', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            attacker_id: currentUnit.id,
+            target_id: target.id,
+            attack_power: currentUnit.atk,
+            target_armor: target.arm
+          })
+        });
+
+        const data = await res.json();
+        const dmg = typeof data.damage_dealt === 'number' ? data.damage_dealt : 0;
+        target.hp = Math.max(0, target.hp - dmg);
+
+        log(`🩸 Ворог [${currentUnit.name}] атакує [${target.name}] на ${dmg} шкоди!`, 'log-enemy');
+
+        if (target.hp === 0) {
+          log(`💀 Ваш боєць [${target.name}] загинув!`, 'log-enemy');
+        }
+      } catch (err) {
+        log(`[Помилка API]: ${err.message}`, 'log-enemy');
+      }
+
+      render();
+      nextTurn();
+    }
+
+    function render() {
+      const renderTeam = (teamName, containerId) => {
+        const container = document.getElementById(containerId);
+        container.innerHTML = '';
+
+        units.filter(u => u.team === teamName).forEach(u => {
+          const card = document.createElement('div');
+          const isDead = u.hp <= 0;
+          const isCurrent = currentUnit && currentUnit.id === u.id;
+          const isTarget = currentUnit && currentUnit.team === 'player' && canTarget(currentUnit, u);
+
+          let classNames = ['unit-card'];
+          if (isDead) classNames.push('dead');
+          if (isCurrent) classNames.push('current-turn');
+          if (isTarget) {
+            classNames.push(currentUnit.role === 'Сапорт' ? 'healable' : 'targetable');
+          }
+
+          card.className = classNames.join(' ');
+          card.style.gridColumn = u.col + 1;
+          card.style.gridRow = u.row + 1;
+
+          if (!isDead && isTarget) {
+            card.onclick = () => onUnitClick(u.id);
+          }
+
+          const hpPercent = Math.max(0, (u.hp / u.maxHp) * 100);
+          card.innerHTML = `
+            <div class="unit-top">
+              <div>
+                <div class="unit-name">${u.name}</div>
+                <div class="unit-stats">${u.role} | Броня: ${u.arm}</div>
+              </div>
+              <div class="unit-badge">Init: ${u.init}</div>
+            </div>
+            <div>
+              <div class="hp-bar-bg"><div class="hp-bar-fill" style="width: ${hpPercent}%"></div></div>
+              <div class="hp-text">${Math.round(u.hp)} / ${u.maxHp} HP</div>
+            </div>
+          `;
+          container.appendChild(card);
+        });
+      };
+
+      renderTeam('player', 'player-squad');
+      renderTeam('enemy', 'enemy-squad');
+    }
+
+    function log(msg, className = '') {
+      const box = document.getElementById('combat-log');
+      const row = document.createElement('div');
+      row.className = `log-entry ${className}`;
+      row.innerText = msg;
+      box.appendChild(row);
+      box.scrollTop = box.scrollHeight;
+    }
+
+    // Старт
+    resetBattle();
+  </script>
+</body>
+</html>
