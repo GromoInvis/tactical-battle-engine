@@ -1,0 +1,47 @@
+# ==============================================================================
+# ПРОДАКШН DOCKER COMPOSE ДЛЯ TACTICAL ENGINE
+# ==============================================================================
+# Головна відмінність від локального docker-compose.yml:
+# Замість збірки з файлів (build: .) ми підтягуємо готовий образ із реєстру ghcr.io
+
+services:
+  # Сервіс бази даних PostgreSQL
+  db:
+    image: postgres:15-alpine
+    container_name: prod-battle-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: player
+      POSTGRES_PASSWORD: supersecretpassword
+      POSTGRES_DB: battle_db
+    volumes:
+      - prod_pgdata:/var/lib/postgresql/data
+
+  # Сервіс API бойового двіжка
+  api:
+    # Завантажуємо протестований артефакт із GitHub Container Registry
+    image: ghcr.io/gromoinvis/tactical-battle-engine:latest
+    container_name: prod-battle-api
+    restart: always
+    expose:
+      - "8000"
+    environment:
+      DATABASE_URL: postgresql://player:supersecretpassword@db:5432/battle_db
+    depends_on:
+      - db
+
+  # Зворотний проксі-сервер Nginx
+  nginx:
+    image: nginx:alpine
+    container_name: prod-battle-nginx
+    restart: always
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api
+
+# Постійний том для збереження даних продакшн-бази
+volumes:
+  prod_pgdata:
