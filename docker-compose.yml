@@ -1,0 +1,39 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: battle-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: player
+      POSTGRES_PASSWORD: supersecretpassword
+      POSTGRES_DB: battle_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  api:
+    build: .
+    container_name: battle-api
+    restart: always
+   
+    expose:
+      - "8000"
+    environment:
+      DATABASE_URL: postgresql://player:supersecretpassword@db:5432/battle_db
+    depends_on:
+      - db
+
+  nginx:
+    image: nginx:alpine
+    container_name: battle-nginx
+    restart: always
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api
+
+volumes:
+  pgdata:

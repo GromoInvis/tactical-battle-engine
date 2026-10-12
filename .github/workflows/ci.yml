@@ -1,0 +1,25 @@
+name: Battle Engine CI
+
+# Тригер: запускати пайплайн при кожному пуші в гілки main або master
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Крок 1: Скачати твій репозиторій на хмарний сервер GitHub
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Крок 2: Зібрати Docker-образ бекенду
+      - name: Build Docker image
+        run: docker build -t tactical-engine-test .
+
+      # Крок 3: Запустити контейнер і прогнати тести
+      - name: Run pytest inside container
+        run: docker run --rm tactical-engine-test pytest test_main.py
