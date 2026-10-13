@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <title>Alonar — Dungeon Crawler RPG</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, sans-serif; user-select: none; }
+    body { background: #0c0f14; color: #d0d7de; display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 20px; }
+    h1 { color: #e3b341; margin-bottom: 15px; font-size: 26px; letter-spacing: 1px; text-shadow: 0 0 10px rgba(227, 179, 65, 0.4); }
+
+    .game-container { display: grid; grid-template-columns: 280px 420px 280px; gap: 16px; width: 1000px; }
+    .panel { background: #161b22; border: 2px solid #30363d; border-radius: 8px; padding: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+    .panel-title { font-weight: bold; font-size: 15px; color: #58a6ff; margin-bottom: 12px; border-bottom: 1px solid #30363d; padding-bottom: 6px; }
+
+    /* Панель персонажа */
+    .stat-row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; }
+    .bar-bg { width: 100%; height: 8px; background: #21262d; border-radius: 4px; overflow: hidden; margin-top: 3px; margin-bottom: 8px; }
+    .hp-fill { height: 100%; background: #da3633; width: 100%; transition: width 0.2s; }
+    .mp-fill { height: 100%; background: #1f6feb; width: 100%; transition: width 0.2s; }
+
+    .equip-slot { background: #21262d; border: 1px dashed #484f58; border-radius: 6px; padding: 8px; margin-bottom: 8px; font-size: 12px; }
+    .equip-slot.filled { border-style: solid; border-color: #58a6ff; }
+    .slot-label { font-size: 10px; color: #8b949e; text-transform: uppercase; }
+
+    /* Центральна кімната підземелля */
+    .dungeon-view { display: flex; flex-direction: column; align-items: center; justify-content: space-between; min-height: 380px; }
+    .floor-badge { background: #30363d; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: bold; color: #f0f6fc; }
+    .room-content { display: flex; flex-direction: column; align-items: center; justify-content: center; flex-grow: 1; text-align: center; width: 100%; }
+    .room-icon { font-size: 54px; margin-bottom: 10px; }
+    .enemy-card { background: #21262d; border: 2px solid #8b949e; border-radius: 8px; padding: 14px; width: 90%; }
+    .btn-action { background: #238636; color: white; border: none; padding: 10px 18px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px; width: 100%; margin-top: 8px; transition: 0.2s; }
+    .btn-action:hover { background: #2ea043; }
+    .btn-action:disabled { background: #30363d; color: #8b949e; cursor: not-allowed; }
+    .btn-next { background: #1f6feb; }
+    .btn-next:hover { background: #388bfd; }
+
+    /* Інвентар */
+    .inv-list { display: flex; flex-direction: column; gap: 8px; max-height: 360px; overflow-y: auto; }
+    .item-card { background: #21262d; border: 1px solid #30363d; border-radius: 6px; padding: 8px; cursor: pointer; transition: 0.15s; }
+    .item-card:hover { border-color: #58a6ff; transform: scale(1.02); }
+    .item-name { font-size: 13px; font-weight: bold; }
+    .item-desc { font-size: 11px; color: #8b949e; margin-top: 2px; }
+    .rarity-common { color: #c9d1d9; }
+    .rarity-magic { color: #58a6ff; }
+    .rarity-rare { color: #d29922; }
+
+    /* Лог пригод */
+    .log-box { width: 1000px; height: 120px; background: #161b22; border: 2px solid #30363d; border-radius: 8px; margin-top: 16px; padding: 10px 14px; overflow-y: auto; font-family: monospace; font-size: 12px; }
+    .log-entry { margin-bottom: 3px; }
+    .log-hit { color: #f85149; }
+    .log-loot { color: #e3b341; }
+    .log-info { color: #58a6ff; }
+  </style>
+</head>
+<body>
+
+  <h1>🧭 Alonar: Підземелля Забутих</h1>
+
+  <div class="game-container">
+    <!-- ПАНЕЛЬ ГЕРОЯ -->
+    <div class="panel">
+      <div class="panel-title">🛡️ Герой (<span id="p-gold">100</span> 🪙)</div>
+      
+      <div class="stat-row"><span>Здоров'я (HP)</span><span id="p-hp-text">--/--</span></div>
+      <div class="bar-bg"><div class="hp-fill" id="p-hp-bar"></div></div>
+      
+      <div class="stat-row"><span>Мана (MP)</span><span id="p-mp-text">--/--</span></div>
+      <div class="bar-bg"><div class="mp-fill" id="p-mp-bar"></div></div>
+
+      <div class="stat-row"><span>Атака</span><b id="p-atk">--</b></div>
+      <div class="stat-row"><span>Броня</span><b id="p-arm">--</b></div>
+      <div class="stat-row"><span>Критичний шанс</span><b id="p-crit">--%</b></div>
+      <div class="stat-row"><span>Ухилення</span><b id="p-dodge">--%</b></div>
+
+      <div style="margin-top: 14px;" class="panel-title">Спорядження</div>
+      <div id="equip-container"></div>
+    </div>
+
+    <!-- КІМНАТА ПІДЗЕМЕЛЛЯ -->
+    <div class="panel dungeon-view">
+      <div class="floor-badge" id="dungeon-badge">Поверх 1 | Кімната 1 / 5</div>
+      
+      <div class="room-content" id="room-content">
+        <!-- Динамічний вміст кімнати -->
+      </div>
+
+      <div style="width: 100%;">
+        <button class="btn-action" id="btn-room-action" onclick="performRoomAction()">Дія</button>
+        <button class="btn-action btn-next" id="btn-next-room" onclick="nextRoom()" style="display:none;">Наступна кімната ➔</button>
+      </div>
+    </div>
+
+    <!-- РЮКЗАК / ІНВЕНТАР -->
+    <div class="panel">
+      <div class="panel-title">🎒 Інвентар (клік — одягнути)</div>
+      <div class="inv-list" id="inv-list">
+        <!-- Динамічний список предметів -->
+      </div>
+    </div>
+  </div>
+
+  <div class="log-box" id="game-log">
+    <div class="log-entry log-info">[Система] Ви увійшли до підземелля. Досліджуйте кімнати та збирайте лут!</div>
+  </div>
+
+  <script>
+    let hero = null;
+    let dungeon = null;
+
+    async function loadAll() {
+      await fetchCharacter();
+      await fetchDungeon();
+    }
+
+    async function fetchCharacter() {
+      const res = await fetch('/character');
+      const data = await res.json();
+      hero = data;
+      renderCharacter();
+    }
+
+    async function fetchDungeon() {
+      const res = await fetch('/dungeon');
+      dungeon = await res.json();
+      renderDungeon();
+    }
+
+    function renderCharacter() {
+      const p = hero.profile;
+      const s = hero.calculated_stats;
+
+      document.getElementById('p-gold').innerText = p.gold;
+      document.getElementById('p-hp-text').innerText = `${s.current_hp} / ${s.max_hp}`;
+      document.getElementById('p-hp-bar').style.width = `${(s.current_hp / s.max_hp) * 100}%`;
+      
+      document.getElementById('p-mp-text').innerText = `${s.current_mana} / ${s.max_mana}`;
+      document.getElementById('p-mp-bar').style.width = `${(s.current_mana / s.max_mana) * 100}%`;
+
+      document.getElementById('p-atk').innerText = s.physical_attack;
+      document.getElementById('p-arm').innerText = s.armor;
+      document.getElementById('p-crit').innerText = `${s.crit_chance_percent}%`;
+      document.getElementById('p-dodge').innerText = `${s.dodge_chance_percent}%`;
+
+      // Відображення слотів
+      const eq = p.equipment;
+      const slots = ['weapon', 'armor', 'helmet', 'ring'];
+      const slotNames = { weapon: 'Зброя', armor: 'Броня', helmet: 'Шолом', ring: 'Перстень' };
+      
+      const eqContainer = document.getElementById('equip-container');
+      eqContainer.innerHTML = '';
+      slots.forEach(s => {
+        const item = eq[s];
+        const div = document.createElement('div');
+        div.className = `equip-slot ${item ? 'filled' : ''}`;
+        div.innerHTML = `
+          <div class="slot-label">${slotNames[s]}</div>
+          <div style="font-weight:bold; color: ${item ? '#f0f6fc' : '#484f58'}">
+            ${item ? item.name : '(Порожньо)'}
+          </div>
+        `;
+        eqContainer.appendChild(div);
+      });
+
+      // Відображення інвентарю
+      const invContainer = document.getElementById('inv-list');
+      invContainer.innerHTML = '';
+      p.inventory.forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'item-card';
+        div.onclick = () => equipItem(item.id);
+        div.innerHTML = `
+          <div class="item-name rarity-${item.rarity}">${item.name}</div>
+          <div class="item-desc">Слот: ${item.slot} | Atk: +${item.bonus_attack} | Arm: +${item.bonus_armor}</div>
+        `;
+        invContainer.appendChild(div);
+      });
+    }
+
+    function renderDungeon() {
+      const badge = document.getElementById('dungeon-badge');
+      badge.innerText = `Поверх ${dungeon.floor} | Кімната ${dungeon.room_index + 1} / ${dungeon.total_rooms}`;
+
+      const content = document.getElementById('room-content');
+      const actionBtn = document.getElementById('btn-room-action');
+      const nextBtn = document.getElementById('btn-next-room');
+      const r = dungeon.current_room;
+
+      content.innerHTML = '';
+
+      if (r.is_cleared) {
+        content.innerHTML = `<div class="room-icon">✅</div><h3>Кімната зачищена</h3><p style="color:#8b949e;">Можна рухатися далі.</p>`;
+        actionBtn.style.display = 'none';
+        nextBtn.style.display = 'block';
+        return;
+      }
+
+      actionBtn.style.display = 'block';
+      nextBtn.style.display = 'none';
+
+      if (r.room_type === 'battle' || r.room_type === 'boss') {
+        const e = r.enemy;
+        content.innerHTML = `
+          <div class="enemy-card">
+            <div style="font-size:32px;">${r.room_type === 'boss' ? '👹' : '👾'}</div>
+            <h3 style="color:#f85149;">${e.name} (Рівень ${e.level})</h3>
+            <div class="stat-row" style="margin-top:8px;"><span>HP</span><span>${e.current_hp} / ${e.max_hp}</span></div>
+            <div class="bar-bg"><div class="hp-fill" style="width: ${(e.current_hp / e.max_hp) * 100}%"></div></div>
+            <div class="stat-row"><span>Атака: ${e.attack_power}</span><span>Броня: ${e.armor}</span></div>
+          </div>
+        `;
+        actionBtn.innerText = '⚔️ Атакувати ворога';
+        actionBtn.className = 'btn-action';
+      } else if (r.room_type === 'chest') {
+        content.innerHTML = `<div class="room-icon">🎁</div><h3>Таємнича скриня</h3><p style="color:#8b949e;">Всередині чути дзвін монет...</p>`;
+        actionBtn.innerText = '✨ Відкрити скриню';
+        actionBtn.className = 'btn-action';
+      } else if (r.room_type === 'rest') {
+        content.innerHTML = `<div class="room-icon">⛺</div><h3>Затишне багаття</h3><p style="color:#8b949e;">Місце для короткого перепочинку.</p>`;
+        actionBtn.innerText = '🔥 Відпочити біля вогню';
+        actionBtn.className = 'btn-action';
+      }
+    }
+
+    async function equipItem(itemId) {
+      const res = await fetch(`/character/equip/${itemId}`, { method: 'POST' });
+      const data = await res.json();
+      log(`Одягнено: ${data.message}`, 'log-info');
+      await fetchCharacter();
+    }
+
+    async function performRoomAction() {
+      const r = dungeon.current_room;
+      if (r.room_type === 'battle' || r.room_type === 'boss') {
+        const res = await fetch('/dungeon/action/attack', { method: 'POST' });
+        const data = await res.json();
+        data.combat_logs.forEach(l => log(l, 'log-hit'));
+        if (data.is_cleared) log('Кімната зачищена!', 'log-loot');
+        await loadAll();
+      } else {
+        const res = await fetch('/dungeon/action/explore', { method: 'POST' });
+        const data = await res.json();
+        log(data.message, 'log-loot');
+        await loadAll();
+      }
+    }
+
+    async function nextRoom() {
+      const res = await fetch('/dungeon/action/next-room', { method: 'POST' });
+      const data = await res.json();
+      log(data.message, 'log-info');
+      await loadAll();
+    }
+
+    function log(msg, cls = '') {
+      const box = document.getElementById('game-log');
+      const row = document.createElement('div');
+      row.className = `log-entry ${cls}`;
+      row.innerText = msg;
+      box.appendChild(row);
+      box.scrollTop = box.scrollHeight;
+    }
+
+    loadAll();
+  </script>
+</body>
+</html>

@@ -50,6 +50,7 @@ services:
       - "80:80"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./static:/usr/share/nginx/html:ro
     depends_on:
       # Nginx підніметься лише тоді, коли бекенд успішно відповідає на health check
       api:
